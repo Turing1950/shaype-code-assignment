@@ -36,11 +36,17 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
+import com.shaype.code.assignment.model.ReconMessage;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT, properties = "server.port=8080")
 @DirtiesContext
-@EmbeddedKafka(partitions = 1, topics = {"transactions"})
+@EmbeddedKafka(partitions = 1, topics = {"transactions", "recon"})
 @ActiveProfiles("test")
 class IntegrationTest {
     
@@ -66,6 +72,9 @@ class IntegrationTest {
     private Producer<String, String> producer;
     private ObjectMapper objectMapper;
     private ListAppender<ILoggingEvent> logAppender;
+    
+    public static ReconMessage lastReconMessage;
+    public static CountDownLatch reconLatch;
     
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -103,13 +112,20 @@ class IntegrationTest {
             Instant.parse("2025-06-23T10:00:00Z"), null
         );
         
+        // Setup recon message latch before sending
+        reconLatch = new CountDownLatch(1);
+        
         producer.send(new ProducerRecord<>(topic, "key", objectMapper.writeValueAsString(transaction)));
         producer.flush();
         
-        Thread.sleep(2000);
+        // Wait for recon message
+        assertTrue(reconLatch.await(5, TimeUnit.SECONDS), "Recon message not received");
         
         double alertsTriggered = meterRegistry.get("alerts.triggered.total").counter().count() - initialAlerts;
         assertEquals(0, alertsTriggered, "Should not trigger any alerts");
+        assertNotNull(lastReconMessage, "Recon message should be sent");
+        assertFalse(lastReconMessage.wasAlerted(), "Should not be alerted for normal transaction");
+        assertEquals("PROCESSED", lastReconMessage.outcome());
     }
     
     @Test
@@ -122,10 +138,13 @@ class IntegrationTest {
         );
         
         TestWebhookController.webhookLatch = new CountDownLatch(1);
+        reconLatch = new CountDownLatch(1);
+        
         producer.send(new ProducerRecord<>(topic, "key", objectMapper.writeValueAsString(transaction)));
         producer.flush();
         
         assertTrue(TestWebhookController.webhookLatch.await(10, TimeUnit.SECONDS), "Webhook not received");
+        assertTrue(reconLatch.await(5, TimeUnit.SECONDS), "Recon message not received");
         
         assertEquals("HIGH_AMOUNT", TestWebhookController.receivedWebhook.get("reason"));
         assertEquals("HIGH", TestWebhookController.receivedWebhook.get("severity"));
@@ -137,6 +156,9 @@ class IntegrationTest {
         boolean hasTraceId = logAppender.list.stream()
             .anyMatch(event -> event.getMDCPropertyMap().containsKey("traceId"));
         assertTrue(hasTraceId, "Should have trace ID in logs");
+        assertNotNull(lastReconMessage, "Recon message should be sent");
+        assertTrue(lastReconMessage.wasAlerted(), "Should be alerted for high amount");
+        assertEquals("ALERTED", lastReconMessage.outcome());
     }
     
     @Test
@@ -149,16 +171,22 @@ class IntegrationTest {
         );
         
         TestWebhookController.webhookLatch = new CountDownLatch(1);
+        reconLatch = new CountDownLatch(1);
+        
         producer.send(new ProducerRecord<>(topic, "key", objectMapper.writeValueAsString(transaction)));
         producer.flush();
         
         assertTrue(TestWebhookController.webhookLatch.await(10, TimeUnit.SECONDS), "Webhook not received");
+        assertTrue(reconLatch.await(5, TimeUnit.SECONDS), "Recon message not received");
         
         assertEquals("WATCHLIST_ACCOUNT", TestWebhookController.receivedWebhook.get("reason"));
         assertEquals("MEDIUM", TestWebhookController.receivedWebhook.get("severity"));
         
         double alertsTriggered = meterRegistry.get("alerts.triggered.total").counter().count() - initialAlerts;
         assertEquals(1, alertsTriggered, "Should have triggered 1 alert");
+        assertNotNull(lastReconMessage, "Recon message should be sent");
+        assertTrue(lastReconMessage.wasAlerted(), "Should be alerted for watchlist account");
+        assertEquals("ALERTED", lastReconMessage.outcome());
     }
     
     @Test
@@ -173,10 +201,13 @@ class IntegrationTest {
         );
         
         TestWebhookController.webhookLatch = new CountDownLatch(1);
+        reconLatch = new CountDownLatch(1);
+        
         producer.send(new ProducerRecord<>(topic, "key", objectMapper.writeValueAsString(transaction)));
         producer.flush();
         
         assertTrue(TestWebhookController.webhookLatch.await(10, TimeUnit.SECONDS), "Webhook not received");
+        assertTrue(reconLatch.await(5, TimeUnit.SECONDS), "Recon message not received");
         
         assertEquals("HIGH_AMOUNT,WATCHLIST_ACCOUNT", TestWebhookController.receivedWebhook.get("reason"));
         assertEquals("HIGH", TestWebhookController.receivedWebhook.get("severity"));
@@ -190,5 +221,16 @@ class IntegrationTest {
         assertEquals(2, alertsTriggered, "Should have triggered 2 alerts");
         assertEquals(1, highAmountAlerts, "Should have 1 high amount alert");
         assertEquals(1, watchlistAlerts, "Should have 1 watchlist alert");
+        assertNotNull(lastReconMessage, "Recon message should be sent");
+        assertTrue(lastReconMessage.wasAlerted(), "Should be alerted for high amount and watchlist");
+        assertEquals("ALERTED", lastReconMessage.outcome());
+    }
+    
+    @KafkaListener(topics = "recon", groupId = "test-recon-group")
+    public void receiveReconMessage(@Payload ReconMessage reconMessage) {
+        lastReconMessage = reconMessage;
+        if (reconLatch != null) {
+            reconLatch.countDown();
+        }
     }
 }

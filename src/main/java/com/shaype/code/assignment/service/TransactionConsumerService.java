@@ -19,11 +19,13 @@ public class TransactionConsumerService {
     
     private final KafkaMetrics metrics;
     private final AlertService alertService;
+    private final ReconService reconService;
     
     @Autowired
-    public TransactionConsumerService(KafkaMetrics metrics, AlertService alertService) {
+    public TransactionConsumerService(KafkaMetrics metrics, AlertService alertService, ReconService reconService) {
         this.metrics = metrics;
         this.alertService = alertService;
+        this.reconService = reconService;
     }
 
     @KafkaListener(topics = "${kafka.topic.transactions}")
@@ -77,7 +79,19 @@ public class TransactionConsumerService {
         logger.info("Processing transaction {} with context {}",
                    transaction.transactionId(), transaction.contextId());
         
+        // Evaluate transaction for alerts
+        boolean wasAlerted = hasAlerts(transaction);
         alertService.evaluateTransaction(transaction);
+        
+        // Send recon message
+        String outcome = wasAlerted ? "ALERTED" : "PROCESSED";
+        reconService.sendReconMessage(transaction.contextId(), wasAlerted, outcome);
+    }
+    
+    private boolean hasAlerts(Transaction transaction) {
+        return transaction.amount() > 10000 || 
+               (transaction.fromAccount().equals("suspicious-account-1") || 
+                transaction.fromAccount().equals("suspicious-account-2"));
     }
     
 

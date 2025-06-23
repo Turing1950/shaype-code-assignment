@@ -19,6 +19,7 @@ kafka:
   bootstrap-servers: localhost:9092
   topic:
     transactions: transactions
+    recon: recon
   consumer:
     group-id: transaction-consumer-group
 
