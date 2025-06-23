@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: code.assignment
+
+# Actuator and Prometheus configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+kafka:
+  bootstrap-servers: localhost:9092
+  topic:
+    transactions: transactions
+  consumer:
+    group-id: transaction-consumer-group
+
+logging:
+  level:
+    com.shaype.code.assignment: INFO
+    org.apache.kafka: WARN

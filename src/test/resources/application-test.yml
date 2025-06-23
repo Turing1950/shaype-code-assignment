@@ -1,0 +1,12 @@
+spring:
+  kafka:
+    consumer:
+      auto-offset-reset: earliest
+      group-id: test-consumer-group
+
+kafka:
+  bootstrap-servers: ${spring.embedded.kafka.brokers}
+  topic:
+    transactions: transactions
+  consumer:
+    group-id: test-consumer-group
