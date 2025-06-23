@@ -22,6 +22,12 @@ kafka:
   consumer:
     group-id: transaction-consumer-group
 
+alert:
+  amount-threshold: 10000
+  watchlist-accounts:
+    - "suspicious-account-1"
+    - "suspicious-account-2"
+
 logging:
   level:
     com.shaype.code.assignment: INFO

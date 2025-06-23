@@ -1,6 +1,7 @@
 package com.shaype.code.assignment.service;
 
 import com.shaype.code.assignment.config.KafkaMetrics;
+import com.shaype.code.assignment.model.Alert;
 import com.shaype.code.assignment.model.Transaction;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -17,10 +18,12 @@ public class TransactionConsumerService {
     private static final Logger logger = LoggerFactory.getLogger(TransactionConsumerService.class);
     
     private final KafkaMetrics metrics;
+    private final AlertService alertService;
     
     @Autowired
-    public TransactionConsumerService(KafkaMetrics metrics) {
+    public TransactionConsumerService(KafkaMetrics metrics, AlertService alertService) {
         this.metrics = metrics;
+        this.alertService = alertService;
     }
 
     @KafkaListener(topics = "${kafka.topic.transactions}")
@@ -71,5 +74,14 @@ public class TransactionConsumerService {
         // Business logic for processing transaction
         logger.info("Processing transaction {} with context {}", 
                    transaction.transactionId(), transaction.contextId());
+        
+        // Evaluate transaction for alerts
+        alertService.evaluateTransaction(transaction)
+            .ifPresent(this::handleAlert);
+    }
+    
+    private void handleAlert(Alert alert) {
+        logger.warn("ALERT TRIGGERED: {} - {}", alert.ruleTriggered(), alert.message());
+        // Additional alert handling logic can be added here
     }
 }
