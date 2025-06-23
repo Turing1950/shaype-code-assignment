@@ -27,6 +27,9 @@ alert:
   watchlist-accounts:
     - "suspicious-account-1"
     - "suspicious-account-2"
+  webhook:
+    url: "http://localhost:8080/webhook/alerts"
+    timeout-ms: 5000
 
 logging:
   level:

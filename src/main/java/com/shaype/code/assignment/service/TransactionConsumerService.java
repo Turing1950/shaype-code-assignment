@@ -1,7 +1,6 @@
 package com.shaype.code.assignment.service;
 
 import com.shaype.code.assignment.config.KafkaMetrics;
-import com.shaype.code.assignment.model.Alert;
 import com.shaype.code.assignment.model.Transaction;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -71,17 +70,11 @@ public class TransactionConsumerService {
     }
 
     private void processTransaction(Transaction transaction) {
-        // Business logic for processing transaction
-        logger.info("Processing transaction {} with context {}", 
+        logger.info("Processing transaction {} with context {}",
                    transaction.transactionId(), transaction.contextId());
         
-        // Evaluate transaction for alerts
-        alertService.evaluateTransaction(transaction)
-            .ifPresent(this::handleAlert);
+        alertService.evaluateTransaction(transaction);
     }
     
-    private void handleAlert(Alert alert) {
-        logger.warn("ALERT TRIGGERED: {} - {}", alert.ruleTriggered(), alert.message());
-        // Additional alert handling logic can be added here
-    }
+
 }

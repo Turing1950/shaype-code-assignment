@@ -10,3 +10,12 @@ kafka:
     transactions: transactions
   consumer:
     group-id: test-consumer-group
+
+alert:
+  amount-threshold: 10000
+  watchlist-accounts:
+    - "suspicious-account-1"
+    - "suspicious-account-2"
+  webhook:
+    url: ""
+    timeout-ms: 1000

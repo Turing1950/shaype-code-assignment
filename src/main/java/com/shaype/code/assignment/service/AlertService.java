@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -19,12 +18,14 @@ public class AlertService {
     private static final Logger logger = LoggerFactory.getLogger(AlertService.class);
     
     private final AlertConfig alertConfig;
+    private final WebhookService webhookService;
     private final Counter alertsTriggeredCounter;
     private final Counter highAmountAlertsCounter;
     private final Counter watchlistAlertsCounter;
     
-    public AlertService(AlertConfig alertConfig, MeterRegistry meterRegistry) {
+    public AlertService(AlertConfig alertConfig, WebhookService webhookService, MeterRegistry meterRegistry) {
         this.alertConfig = alertConfig;
+        this.webhookService = webhookService;
         this.alertsTriggeredCounter = Counter.builder("alerts.triggered.total")
                 .description("Total number of alerts triggered")
                 .register(meterRegistry);
@@ -36,18 +37,15 @@ public class AlertService {
                 .register(meterRegistry);
     }
     
-    public Optional<Alert> evaluateTransaction(Transaction transaction) {
+    public void evaluateTransaction(Transaction transaction) {
         logger.debug("Evaluating transaction: {}", transaction.transactionId());
         
-        if (isHighAmountAlert(transaction)) {
-            return Optional.of(createHighAmountAlert(transaction));
-        }
+        boolean isHighAmount = isHighAmountAlert(transaction);
+        boolean isWatchlist = isWatchlistAlert(transaction);
         
-        if (isWatchlistAlert(transaction)) {
-            return Optional.of(createWatchlistAlert(transaction));
+        if (isHighAmount || isWatchlist) {
+            createCombinedAlert(transaction, isHighAmount, isWatchlist);
         }
-        
-        return Optional.empty();
     }
     
     private boolean isHighAmountAlert(Transaction transaction) {
@@ -58,44 +56,48 @@ public class AlertService {
         return alertConfig.getWatchlistAccounts().contains(transaction.fromAccount());
     }
     
-    private Alert createHighAmountAlert(Transaction transaction) {
-        highAmountAlertsCounter.increment();
-        alertsTriggeredCounter.increment();
+    private void createCombinedAlert(Transaction transaction, boolean isHighAmount, boolean isWatchlist) {
+        if (isHighAmount) {
+            highAmountAlertsCounter.increment();
+            alertsTriggeredCounter.increment();
+            logger.warn("HIGH AMOUNT ALERT: Transaction {} amount {} exceeds threshold {}", 
+                transaction.transactionId(), transaction.amount(), alertConfig.getAmountThreshold());
+        }
+        
+        if (isWatchlist) {
+            watchlistAlertsCounter.increment();
+            alertsTriggeredCounter.increment();
+            logger.warn("WATCHLIST ALERT: Transaction {} from watchlisted account {}", 
+                transaction.transactionId(), transaction.fromAccount());
+        }
+        
+        String reason = isHighAmount && isWatchlist ? "HIGH_AMOUNT,WATCHLIST_ACCOUNT" : 
+                       isHighAmount ? "HIGH_AMOUNT" : "WATCHLIST_ACCOUNT";
+        String severity = isHighAmount ? "HIGH" : "MEDIUM";
+        String message = buildAlertMessage(transaction, isHighAmount, isWatchlist);
         
         Alert alert = new Alert(
             UUID.randomUUID().toString(),
             transaction.transactionId(),
-            "HIGH_AMOUNT",
-            "HIGH",
-            String.format("High amount transaction: %d %s exceeds threshold %d", 
-                transaction.amount(), transaction.currency(), alertConfig.getAmountThreshold()),
+            reason,
+            severity,
+            message,
             Instant.now(),
             transaction
         );
         
-        logger.warn("HIGH AMOUNT ALERT: Transaction {} amount {} exceeds threshold {}", 
-            transaction.transactionId(), transaction.amount(), alertConfig.getAmountThreshold());
-        
-        return alert;
+        webhookService.sendAlert(alert);
     }
     
-    private Alert createWatchlistAlert(Transaction transaction) {
-        watchlistAlertsCounter.increment();
-        alertsTriggeredCounter.increment();
-        
-        Alert alert = new Alert(
-            UUID.randomUUID().toString(),
-            transaction.transactionId(),
-            "WATCHLIST_ACCOUNT",
-            "MEDIUM",
-            String.format("Transaction from watchlisted account: %s", transaction.fromAccount()),
-            Instant.now(),
-            transaction
-        );
-        
-        logger.warn("WATCHLIST ALERT: Transaction {} from watchlisted account {}", 
-            transaction.transactionId(), transaction.fromAccount());
-        
-        return alert;
+    private String buildAlertMessage(Transaction transaction, boolean isHighAmount, boolean isWatchlist) {
+        if (isHighAmount && isWatchlist) {
+            return String.format("High amount transaction: %d %s exceeds threshold %d AND from watchlisted account: %s", 
+                transaction.amount(), transaction.currency(), alertConfig.getAmountThreshold(), transaction.fromAccount());
+        } else if (isHighAmount) {
+            return String.format("High amount transaction: %d %s exceeds threshold %d", 
+                transaction.amount(), transaction.currency(), alertConfig.getAmountThreshold());
+        } else {
+            return String.format("Transaction from watchlisted account: %s", transaction.fromAccount());
+        }
     }
 }
