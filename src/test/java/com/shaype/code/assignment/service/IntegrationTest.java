@@ -32,6 +32,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT, properties = "server.port=8080")
@@ -61,6 +65,7 @@ class IntegrationTest {
 
     private Producer<String, String> producer;
     private ObjectMapper objectMapper;
+    private ListAppender<ILoggingEvent> logAppender;
     
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -74,6 +79,12 @@ class IntegrationTest {
         
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
+        
+        // Setup log appender
+        Logger logger = (Logger) LoggerFactory.getLogger("com.shaype.code.assignment.service");
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        logger.addAppender(logAppender);
     }
 
     @AfterEach
@@ -121,6 +132,11 @@ class IntegrationTest {
         
         double alertsTriggered = meterRegistry.get("alerts.triggered.total").counter().count() - initialAlerts;
         assertEquals(1, alertsTriggered, "Should have triggered 1 alert");
+        
+        // Verify trace ID in logs
+        boolean hasTraceId = logAppender.list.stream()
+            .anyMatch(event -> event.getMDCPropertyMap().containsKey("traceId"));
+        assertTrue(hasTraceId, "Should have trace ID in logs");
     }
     
     @Test

@@ -5,6 +5,7 @@ import com.shaype.code.assignment.model.Transaction;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,8 @@ public class TransactionConsumerService {
         
         try {
             Transaction processedTransaction = ensureContextId(transaction);
+            MDC.put("traceId", processedTransaction.contextId());
+            
             logger.info("Received transaction: {}", processedTransaction);
             
             // Process transaction here
@@ -44,6 +47,7 @@ public class TransactionConsumerService {
                 metrics.getTransactionsProcessed().increment();
             }
         } finally {
+            MDC.clear();
             if (metrics != null) {
                 sample.stop(metrics.getProcessingTime());
                 metrics.getActiveTransactions().decrementAndGet();
