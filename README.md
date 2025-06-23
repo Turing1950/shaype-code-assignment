@@ -2,6 +2,16 @@
 
 Real-time transaction monitoring with Kafka-based alerting and webhook notifications.
 
+## Quick Start
+
+```bash
+# Start Kafka
+docker run -p 9092:9092 apache/kafka:2.13-3.7.0
+
+# Run application
+./mvnw spring-boot:run
+```
+
 ## Configuration
 
 ```yaml
@@ -17,7 +27,7 @@ alert:
     - "suspicious-account-1"
     - "suspicious-account-2"
   webhook:
-    url: "http://localhost:8080/webhook/alerts"
+    url: "http://localhost:8080/test-webhook"
     timeout-ms: 5000
 ```
 
@@ -30,7 +40,7 @@ alert:
 | `GET /actuator/health/liveness` | Liveness probe |
 | `GET /health/kafka` | Kafka connectivity |
 | `GET /actuator/prometheus` | Metrics |
-| `POST /webhook/alerts` | Alert webhook receiver |
+| `POST /test-webhook` | Test webhook receiver (test only) |
 
 ## Features
 
@@ -49,8 +59,20 @@ alert:
 
 ## Metrics
 
+**Alerts**
 - `alerts.triggered.total` - Total alerts fired
+- `alerts.high_amount.total` - High amount alerts
+- `alerts.watchlist.total` - Watchlist alerts
+
+**Webhooks**
 - `webhook.alerts.success.total` - Successful deliveries
 - `webhook.alerts.failure.total` - Failed deliveries
 - `webhook.alerts.4xx.total` - Client errors
 - `webhook.alerts.5xx.total` - Server errors
+- `webhook.alerts.duration` - Delivery time
+
+**Kafka**
+- `kafka.transactions.processed` - Transactions processed
+- `kafka.transactions.generated_context_id` - Generated context IDs
+- `kafka.transactions.processing_time` - Processing duration
+- `kafka.transactions.active` - Active transactions
